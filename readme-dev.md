@@ -220,3 +220,16 @@ ignores this option. See [MCP startup waiting](docs/mcp-startup-await-timeout.md
 ## Startup model selection
 
 Core's `_meta.lody.sessionConfig` version 1 supplies optional `modelId` and a `configOptionValues` dictionary on new/load/resume/fork. The adapter applies model and reasoning to native configuration before establishing the thread. Explicit `modelId` wins over the `model` option; `reasoning_effort` wins over a legacy `model[effort]` suffix. Missing selection preserves native defaults, while malformed selection fails with invalid params. Other options still use live ACP configuration. Native model-mismatch warnings are preserved for intentional switches.
+
+
+### Native service-tier selection
+
+When the native model catalog offers multiple service tiers, ACP exposes a
+`service-tier` select using the catalog's exact ids and labels. Hosts, CLI and
+MCP callers may pass it in their existing `configOptionValues`. `inherit` retains
+the native thread tier; `default` explicitly requests standard speed. Explicit selection uses experimental `thread/settings/update`; only an acknowledged
+write updates local state. The chosen tier is also sent on each turn, and load/fork
+restores raw native metadata. `inherit` leaves native settings unchanged. Catalog availability does not establish
+account eligibility, billing or the actual server-executed tier. Native errors are
+not silently converted to another tier. Legacy `fast-mode` remains available;
+changing it replaces the explicit tier, so do not submit conflicting controls.

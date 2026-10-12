@@ -1344,7 +1344,8 @@ type DistributiveOmit<T, K extends keyof any> = T extends any
 
 export interface ExperimentalThreadSettingsUpdateParams {
     threadId: string;
-    collaborationMode: {
+    serviceTier?: string | null;
+    collaborationMode?: {
         mode: "default" | "plan";
         settings: {
             model: string;

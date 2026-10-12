@@ -131,6 +131,9 @@ import {WebSearchReporter} from "./tool-calls/reporters/WebSearchReporter";
 import {
     clientSupportsBooleanConfigOptions,
     createFastModeConfigOption,
+    createServiceTierConfigOption,
+    catalogServiceTiers,
+    SERVICE_TIER_CONFIG_ID,
     FAST_MODE_CONFIG_ID,
     FAST_MODE_OFF,
     FAST_MODE_ON,
@@ -240,6 +243,7 @@ export interface SessionState {
     additionalDirectories: string[];
     mcpServers?: Array<AcpMcpServer>;
     fastModeEnabled: boolean;
+    selectedServiceTier?: string | null | undefined;
     currentModelSupportsFast: boolean;
     sessionMcpServers?: Array<string>;
     /** The capability choices of the client for tool call and plan reports. */
@@ -1095,7 +1099,8 @@ export class CodexAcpServer {
             cwd: request.cwd,
             additionalDirectories: sessionMetadata.additionalDirectories,
             mcpServers: requestedMcpServers,
-            fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+            fastModeEnabled: sessionMetadata.currentServiceTier === "fast" || sessionMetadata.currentServiceTier === "priority",
+            selectedServiceTier: sessionMetadata.currentServiceTier ?? null,
             currentModelSupportsFast: currentModelSupportsFast,
             sessionMcpServers: sessionMcpServers,
             clientCapabilities: this.capabilities,
@@ -2183,6 +2188,19 @@ export class CodexAcpServer {
 
     private async applySessionConfigOption(sessionState: SessionState, params: acp.SetSessionConfigOptionRequest): Promise<void> {
         switch (params.configId) {
+            case SERVICE_TIER_CONFIG_ID: {
+                const value = this.stringConfigValue(params);
+                const model = sessionState.availableModels.find(m => m.id === ModelId.fromString(sessionState.currentModelId).model);
+                if (value !== "inherit" && value !== "default" && !catalogServiceTiers(model).some(t => t.id === value)) {
+                    throw RequestError.invalidParams("Service tier is not advertised by the current model");
+                }
+                // Commit the in-memory choice only after native persistence acknowledges it.
+                // Inherit leaves native settings unchanged and uses null on the next turn.
+                if (value !== "inherit") await this.codexAcpClient.setServiceTier(sessionState.sessionId, value);
+                sessionState.selectedServiceTier = value === "inherit" ? null : value;
+                sessionState.fastModeEnabled = value === "fast" || value === "priority";
+                break;
+            }
             case FAST_MODE_CONFIG_ID:
                 this.applyFastModeChange(sessionState, params);
                 break;
@@ -2208,12 +2226,14 @@ export class CodexAcpServer {
         const value = params.value;
         if (typeof value === "boolean") {
             sessionState.fastModeEnabled = value;
+            sessionState.selectedServiceTier = value ? undefined : "default";
             return;
         }
         if (value !== FAST_MODE_ON && value !== FAST_MODE_OFF) {
             throw RequestError.invalidParams();
         }
         sessionState.fastModeEnabled = value === FAST_MODE_ON;
+        sessionState.selectedServiceTier = sessionState.fastModeEnabled ? undefined : "default";
     }
 
     private stringConfigValue(params: { value: string | boolean }): string {
@@ -2650,6 +2670,9 @@ export class CodexAcpServer {
                 ),
             );
         }
+        if (catalogServiceTiers(currentModel).length > 1 || (sessionState.selectedServiceTier && !["fast", "priority", "default"].includes(sessionState.selectedServiceTier))) {
+            configOptions.push(createServiceTierConfigOption(currentModel, sessionState.selectedServiceTier ?? null));
+        }
         if (sessionState.currentModelSupportsFast) {
             configOptions.push(createFastModeConfigOption(
                 sessionState.fastModeEnabled,
@@ -2927,7 +2950,8 @@ export class CodexAcpServer {
             cwd: request.cwd,
             additionalDirectories: sessionMetadata.additionalDirectories,
             mcpServers: requestedMcpServers,
-            fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+            fastModeEnabled: sessionMetadata.currentServiceTier === "fast" || sessionMetadata.currentServiceTier === "priority",
+            selectedServiceTier: sessionMetadata.currentServiceTier ?? null,
             currentModelSupportsFast: currentModelSupportsFast,
             sessionMcpServers: sessionMcpServers,
             clientCapabilities: this.capabilities,
@@ -4515,10 +4539,14 @@ export class CodexAcpServer {
                 throw RequestError.invalidRequest("The current model does not support image input");
             }
             const agentMode = sessionState.agentMode;
-            const serviceTier = resolveFastServiceTier(
-                sessionState.fastModeEnabled,
-                sessionState.currentModelSupportsFast,
-            );
+            const selectedTier = sessionState.selectedServiceTier;
+            const currentModel = sessionState.availableModels.find(m => m.id === modelId.model);
+            if (selectedTier && !["default", "fast"].includes(selectedTier) && !catalogServiceTiers(currentModel).some(t => t.id === selectedTier)) {
+                throw RequestError.invalidRequest("The selected service tier is unavailable for the current model; select an available tier before sending");
+            }
+            const serviceTier = selectedTier === undefined
+                ? resolveFastServiceTier(sessionState.fastModeEnabled, sessionState.currentModelSupportsFast)
+                : selectedTier === "fast" && !sessionState.currentModelSupportsFast ? null : selectedTier;
             sessionState.lastTokenUsage = null;
             ensurePendingTurnStart();
             goalLifecycle.prepareTurn();

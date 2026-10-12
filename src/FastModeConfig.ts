@@ -55,3 +55,28 @@ export function createFastModeConfigOption(fastModeEnabled: boolean, useBooleanC
         ],
     };
 }
+
+// Native catalog ids are not the legacy ServiceTier enum (Fast may be "priority").
+export const SERVICE_TIER_CONFIG_ID = "service-tier";
+export function catalogServiceTiers(model: Model | undefined) {
+    return model?.serviceTiers ?? [];
+}
+export function createServiceTierConfigOption(model: Model | undefined, selected: string | null): SessionConfigOption {
+    const tiers = catalogServiceTiers(model);
+    const value = selected ?? "inherit";
+    return {
+        id: SERVICE_TIER_CONFIG_ID,
+        name: "Service tier",
+        description: "Native model catalog choices. Faster tiers may increase usage or cost; availability depends on your account.",
+        category: FAST_MODE_CATEGORY,
+        type: "select",
+        currentValue: value,
+        options: [
+            {value: "inherit", name: "Inherit", description: "Keep the native thread's configured tier"},
+            {value: "default", name: "Standard", description: "Explicitly request standard speed"},
+            ...tiers.filter(t => t.id !== "default" && t.id !== "inherit").map(t => ({value: t.id, name: t.name, description: t.description})),
+            ...(selected && selected !== "default" && !tiers.some(t => t.id === selected)
+                ? [{value: selected, name: `${selected} (unavailable)`, description: "Select an available tier before sending a message"}] : []),
+        ],
+    };
+}

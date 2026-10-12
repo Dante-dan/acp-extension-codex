@@ -1,5 +1,4 @@
 import type {ModeKind} from "./app-server/ModeKind";
-import type {ServiceTier} from "./app-server/ServiceTier";
 import type {Model, Thread, ThreadItemEntry} from "./app-server/v2";
 
 export type SessionMetadata = {
@@ -8,7 +7,7 @@ export type SessionMetadata = {
     models: Model[],
     collaborationMode: ModeKind,
     modelProvider?: string | null,
-    currentServiceTier?: ServiceTier | null,
+    currentServiceTier?: string | null,
     additionalDirectories: string[],
 }
 

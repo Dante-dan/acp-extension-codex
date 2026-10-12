@@ -6,7 +6,6 @@ import type * as acp from "@agentclientprotocol/sdk";
 import {RequestError} from "@agentclientprotocol/sdk";
 import type {CodexAppServerClient} from "./CodexAppServerClient";
 import type {ModeKind} from "./app-server/ModeKind";
-import type {ServiceTier} from "./app-server/ServiceTier";
 import type {Model, ThreadForkParams} from "./app-server/v2";
 import type {SessionMetadata} from "./SessionMetadata";
 import {getLodyForkTurnId} from "./AcpExtensions";
@@ -66,7 +65,7 @@ export async function forkSession(
         models,
         collaborationMode: dependencies.getCollaborationMode(response.thread.id),
         modelProvider: response.modelProvider,
-        currentServiceTier: response.serviceTier as ServiceTier ?? null,
+        currentServiceTier: response.serviceTier ?? null,
         additionalDirectories,
     };
 }

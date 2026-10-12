@@ -11,6 +11,7 @@ import {
     FAST_MODE_CONFIG_ID,
     FAST_MODE_OFF,
     FAST_MODE_ON,
+    SERVICE_TIER_CONFIG_ID,
 } from "../../FastModeConfig";
 import {MODEL_CONFIG_ID} from "../../ModelConfigOption";
 
@@ -24,9 +25,10 @@ describe("Fast mode session config", () => {
     };
 
     async function createSession(
-        currentServiceTier: "fast" | "flex" | null = null,
+        currentServiceTier: string | null = null,
         clientInfo: acp.Implementation | null = null,
         clientCapabilities?: acp.ClientCapabilities,
+        serviceTiers: Array<{id: string; name: string; description: string}> = [],
     ) {
         const fixture = createCodexMockTestFixture();
         const codexAcpAgent = fixture.getCodexAcpAgent();
@@ -34,9 +36,11 @@ describe("Fast mode session config", () => {
         const fastModel = createTestModel({
             id: "fast-model",
             additionalSpeedTiers: ["fast"],
+            serviceTiers,
         });
         const slowModel = createTestModel({id: "slow-model"});
 
+        vi.spyOn(fixture.getCodexAppServerClient(), "threadSettingsUpdate").mockResolvedValue(undefined);
         vi.spyOn(codexAcpClient, "authRequired").mockResolvedValue(false);
         vi.spyOn(codexAcpClient, "getAccount").mockResolvedValue({account: null, requiresOpenaiAuth: false});
         vi.spyOn(codexAcpClient, "newSession").mockResolvedValue({
@@ -67,6 +71,47 @@ describe("Fast mode session config", () => {
         });
         return {codexAcpAgent: mockFixture.getCodexAcpAgent(), turnStartSpy};
     }
+
+    const nativeTiers = [
+        {id: "priority", name: "Fast", description: "Increased usage"},
+        {id: "ultrafast", name: "Ultrafast", description: "Account dependent"},
+    ];
+
+    it("restores the exact catalog tier and exposes distinct choices", async () => {
+        const {response} = await createSession("ultrafast", null, undefined, nativeTiers);
+        expect(response.configOptions?.find(o => o.id === SERVICE_TIER_CONFIG_ID)).toMatchObject({
+            currentValue: "ultrafast",
+            options: expect.arrayContaining([{value: "ultrafast", name: "Ultrafast", description: "Account dependent"}]),
+        });
+    });
+
+    it("sends the selected native tier and an explicit standard reset", async () => {
+        const {fixture, codexAcpAgent} = await createSession(null, null, undefined, nativeTiers);
+        const turnStartSpy = mockPromptTurn(fixture, "session-id");
+        const settingsSpy = vi.spyOn(fixture.getCodexAppServerClient(), "threadSettingsUpdate");
+        await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: SERVICE_TIER_CONFIG_ID, value: "ultrafast"});
+        await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "Hello"}]});
+        expect(turnStartSpy.mock.calls[0]?.[0]).toMatchObject({serviceTier: "ultrafast"});
+        expect(settingsSpy).toHaveBeenCalledWith({threadId: "session-id", serviceTier: "ultrafast"});
+        await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: SERVICE_TIER_CONFIG_ID, value: "default"});
+        await codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "Again"}]});
+        expect(turnStartSpy.mock.calls[1]?.[0]).toMatchObject({serviceTier: "default"});
+    });
+
+    it("preserves the previous choice when native persistence rejects it", async () => {
+        const {fixture, codexAcpAgent} = await createSession("priority", null, undefined, nativeTiers);
+        vi.spyOn(fixture.getCodexAppServerClient(), "threadSettingsUpdate").mockRejectedValue(new Error("tier unavailable for account"));
+        await expect(codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: SERVICE_TIER_CONFIG_ID, value: "ultrafast"})).rejects.toThrow("tier unavailable");
+        expect(codexAcpAgent.getSessionState("session-id").selectedServiceTier).toBe("priority");
+    });
+
+    it("rejects unavailable tiers and preserves the old selection", async () => {
+        const {codexAcpAgent} = await createSession("ultrafast", null, undefined, nativeTiers);
+        await expect(codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: SERVICE_TIER_CONFIG_ID, value: "unknown"})).rejects.toThrow();
+        expect(codexAcpAgent.getSessionState("session-id").selectedServiceTier).toBe("ultrafast");
+        await codexAcpAgent.setSessionConfigOption({sessionId: "session-id", configId: MODEL_CONFIG_ID, value: "slow-model"});
+        await expect(codexAcpAgent.prompt({sessionId: "session-id", prompt: [{type: "text", text: "Hello"}]})).rejects.toThrow();
+    });
 
     it("returns the Fast mode config option defaulted to Off for new sessions", async () => {
         const {response} = await createSession();

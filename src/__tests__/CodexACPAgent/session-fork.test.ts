@@ -24,7 +24,7 @@ describe("ACP session fork", () => {
             thread: {id: "child-session-id"},
             model: model.id,
             modelProvider: "openai",
-            serviceTier: null,
+            serviceTier: "ultrafast",
             reasoningEffort: "medium",
         } as never);
         const unsubscribeSpy = vi.spyOn(codexAppServerClient, "threadUnsubscribe").mockResolvedValue({} as never);
@@ -54,7 +54,7 @@ describe("ACP session fork", () => {
             models: [model],
             collaborationMode: "default",
             modelProvider: "openai",
-            currentServiceTier: null,
+            currentServiceTier: "ultrafast",
             additionalDirectories: ["/workspace/extra"],
         });
         expect(threadForkSpy).toHaveBeenCalledWith({
@@ -131,7 +131,7 @@ describe("ACP session fork", () => {
             models: [model],
             collaborationMode: "default",
             modelProvider: "openai",
-            currentServiceTier: null,
+            currentServiceTier: "ultrafast",
             additionalDirectories: [],
         });
 
@@ -142,6 +142,7 @@ describe("ACP session fork", () => {
         });
 
         expect(response.sessionId).toBe("fork-id");
+        expect(agent.getSessionState("fork-id").selectedServiceTier).toBe("ultrafast");
         expect(agent.getSessionState("fork-id").cwd).toBe("/workspace");
         expect(fixture.getAcpConnectionEvents([])).toEqual([
             {

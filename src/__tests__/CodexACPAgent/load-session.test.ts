@@ -436,6 +436,7 @@ describe("CodexACPAgent - loadSession", () => {
 
         codexAppServerClient.threadResume = vi.fn().mockResolvedValue({
             thread: resumeThread,
+            serviceTier: "ultrafast",
             model: model.id,
             modelProvider: "openai",
             cwd: "/test/project",
@@ -466,6 +467,7 @@ describe("CodexACPAgent - loadSession", () => {
             mcpServers: [],
         };
         await codexAcpAgent.loadSession(loadParams);
+        expect(codexAcpAgent.getSessionState(thread.id).selectedServiceTier).toBe("ultrafast");
 
         expect(codexAppServerClient.threadReadWithHistory).toHaveBeenCalledWith(thread.id);
         expect(codexAppServerClient.threadGoalGet).toHaveBeenCalledWith({ threadId: thread.id });
